@@ -1,0 +1,34 @@
+# Minimal requirements for basic functionality
+# Use this if you encounter issues with the full requirements.txt
+
+# Essential packages
+setuptools>=68.0.0
+wheel>=0.41.0
+packaging>=23.0
+
+# Web Frameworks
+flask
+flask-cors
+streamlit
+
+# Core ML packages
+numpy
+pandas
+scikit-learn
+joblib
+
+# Visualization
+matplotlib
+plotly
+
+# Utilities
+requests
+pyyaml
+python-dotenv
+click
+
+# PDF Generation
+reportlab
+
+# Testing
+pytest
