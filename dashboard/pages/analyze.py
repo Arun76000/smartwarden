@@ -33,20 +33,32 @@ class AnalysisResult:
             setattr(self, key, value)
 
 def call_api_analysis(contract_code, options=None):
-    """Call the API backend for analysis."""
+    """Call the API backend for comprehensive analysis."""
     try:
+        # Enhanced options with new features
+        default_options = {
+            'include_slither': False,
+            'include_mythril': False,
+            'compare_tools': False,
+            'generate_pdf_report': False
+        }
+        
+        if options:
+            default_options.update(options)
+        
         response = requests.post(
             f"{API_BASE_URL}/api/analyze",
             json={
                 "contract_code": contract_code,
-                "options": options or {}
+                "options": default_options
             },
-            timeout=30
+            timeout=60  # Increased timeout for external tools
         )
         
         if response.status_code == 200:
             return response.json()
         else:
+            st.error(f"API Error: {response.status_code} - {response.text}")
             return None
     except Exception as e:
         logger.error(f"API call failed: {e}")
@@ -221,22 +233,128 @@ def run_analysis(contract_code: str, filename: str, include_ai: bool, include_sl
         generate_pdf: Whether to generate PDF report
         timeout: Analysis timeout in seconds
     """
-    # Create analysis request
+    # Create enhanced analysis request
     analysis_options = {
         'include_ai_analysis': include_ai,
         'include_slither': include_slither,
         'include_mythril': include_mythril,
+        'compare_tools': include_comparison,
+        'generate_pdf_report': generate_pdf,
         'include_feature_importance': include_ai,
-        'detailed_report': True
+        'detailed_report': True,
+        'timeout': timeout
     }
     
-    request = AnalysisRequest(
-        contract_code=contract_code,
-        filename=filename,
-        analysis_options=analysis_options,
-        include_tool_comparison=include_comparison,
-        generate_pdf_report=generate_pdf
-    )
+    # Progress tracking
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Analysis phases
+    phases = []
+    if include_ai:
+        phases.extend(['Feature Extraction', 'AI Analysis'])
+    if include_slither:
+        phases.append('Slither Analysis')
+    if include_mythril:
+        phases.append('Mythril Analysis')
+    if include_comparison:
+        phases.append('Tool Comparison')
+    
+    total_phases = len(phases)
+    
+    try:
+        # Start analysis
+        status_text.info("🚀 Starting comprehensive security analysis...")
+        progress_bar.progress(0.1)
+        
+        # Call API with enhanced options
+        start_time = time.time()
+        result = call_api_analysis(contract_code, analysis_options)
+        
+        if result:
+            # Update progress
+            for i, phase in enumerate(phases):
+                progress = (i + 1) / total_phases
+                status_text.info(f"⏳ {phase}...")
+                progress_bar.progress(min(0.1 + (progress * 0.8), 0.9))
+                time.sleep(0.5)  # Visual feedback
+            
+            # Complete
+            progress_bar.progress(1.0)
+            status_text.success("✅ Analysis completed successfully!")
+            
+            # Store results in session
+            st.session_state.analysis_result = result
+            st.session_state.analysis_timestamp = datetime.now()
+            
+            # Display results summary
+            display_analysis_summary(result)
+            
+        else:
+            status_text.error("❌ Analysis failed. Please check API connection.")
+            
+    except Exception as e:
+        status_text.error(f"❌ Analysis error: {str(e)}")
+        logger.error(f"Analysis error: {e}")
+
+def display_analysis_summary(result):
+    """Display a summary of analysis results."""
+    st.markdown("---")
+    st.subheader("📊 Analysis Summary")
+    
+    # Main metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        is_vulnerable = result.get('is_vulnerable', False)
+        if is_vulnerable:
+            st.metric("🚨 Status", "VULNERABLE", delta="High Risk")
+        else:
+            st.metric("✅ Status", "SAFE", delta="Low Risk")
+    
+    with col2:
+        risk_score = result.get('risk_score', 0)
+        st.metric("🎯 Risk Score", f"{risk_score}/100")
+    
+    with col3:
+        confidence = result.get('confidence', 0)
+        st.metric("🎪 Confidence", f"{confidence:.1%}")
+    
+    with col4:
+        vuln_count = len(result.get('vulnerabilities', []))
+        st.metric("🔍 Issues Found", vuln_count)
+    
+    # Tools used
+    tools_used = result.get('tools_used', ['AI'])
+    st.info(f"🛠️ Analysis Tools: {', '.join(tools_used)}")
+    
+    # Quick vulnerabilities overview
+    vulnerabilities = result.get('vulnerabilities', [])
+    if vulnerabilities:
+        st.subheader("⚠️ Detected Vulnerabilities")
+        
+        for i, vuln in enumerate(vulnerabilities[:3]):  # Show top 3
+            with st.expander(f"{vuln.get('type', 'Unknown').title()} - {vuln.get('severity', 'Medium').title()} Severity"):
+                st.write(f"**Source:** {vuln.get('source', 'AI')}")
+                st.write(f"**Confidence:** {vuln.get('confidence', 'Medium')}")
+                st.write(f"**Description:** {vuln.get('description', 'No description available')}")
+                st.write(f"**Recommendation:** {vuln.get('recommendation', 'Review code manually')}")
+        
+        if len(vulnerabilities) > 3:
+            st.info(f"... and {len(vulnerabilities) - 3} more issues. View full results in the Results tab.")
+    
+    # Navigation
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📊 View Detailed Results", type="primary"):
+            st.switch_page("pages/results.py")
+    
+    with col2:
+        if result.get('tool_comparison'):
+            if st.button("⚖️ View Tool Comparison"):
+                st.switch_page("pages/comparison.py")
     
     # Progress tracking
     progress_bar = st.progress(0)

@@ -31,195 +31,142 @@ class ModelLoader:
         else:
             logger.warning("No model metadata found")
     
-    def load_model(self, model_name: str):
-        """Load a specific model."""
-        if not self.metadata:
-            logger.error("No metadata available")
+    def load_binary_model(self):
+        """Load binary classification model."""
+        model_path = self.models_dir / "binary_classifier.joblib"
+        if model_path.exists():
+            try:
+                model = joblib.load(model_path)
+                self.models['binary'] = model
+                logger.info("Binary classifier loaded successfully")
+                return model
+            except Exception as e:
+                logger.error(f"Error loading binary model: {e}")
+                return None
+        else:
+            logger.error("Binary classifier not found")
             return None
-        
-        if model_name not in self.metadata['models']:
-            logger.error(f"Model {model_name} not found in metadata")
-            return None
-        
-        model_info = self.metadata['models'][model_name]
-        model_path = Path(model_info['file'])
-        
-        if not model_path.exists():
-            logger.error(f"Model file not found: {model_path}")
-            return None
-        
-        try:
-            model = joblib.load(model_path)
-            self.models[model_name] = model
-            logger.info(f"Model {model_name} loaded successfully")
-            return model
-        except Exception as e:
-            logger.error(f"Failed to load model {model_name}: {e}")
+    
+    def load_multiclass_model(self):
+        """Load multi-class classification model."""
+        model_path = self.models_dir / "multiclass_classifier.joblib"
+        if model_path.exists():
+            try:
+                model_data = joblib.load(model_path)
+                self.models['multiclass'] = model_data
+                logger.info("Multi-class classifier loaded successfully")
+                return model_data
+            except Exception as e:
+                logger.error(f"Error loading multi-class model: {e}")
+                return None
+        else:
+            logger.error("Multi-class classifier not found")
             return None
     
     def load_all_models(self):
         """Load all available models."""
-        if not self.metadata:
-            return False
+        logger.info("Loading all available models...")
         
-        success = True
-        for model_name in self.metadata['models'].keys():
-            if not self.load_model(model_name):
-                success = False
+        binary_model = self.load_binary_model()
+        multiclass_model = self.load_multiclass_model()
         
-        return success
-    
-    def get_model(self, model_name: str):
-        """Get a loaded model."""
-        if model_name not in self.models:
-            self.load_model(model_name)
-        
-        return self.models.get(model_name)
-    
-    def predict_binary(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Make binary vulnerability prediction."""
-        model = self.get_model('binary_classifier')
-        if not model:
-            return {'error': 'Binary classifier not available'}
-        
-        try:
-            # Convert features to DataFrame
-            feature_names = self.metadata['features']
-            feature_values = [features.get(name, 0) for name in feature_names]
-            X = pd.DataFrame([feature_values], columns=feature_names)
+        loaded_count = 0
+        if binary_model:
+            loaded_count += 1
+        if multiclass_model:
+            loaded_count += 1
             
-            # Make prediction
-            prediction = model.predict(X)[0]
-            probability = model.predict_proba(X)[0]
-            
-            return {
-                'is_vulnerable': bool(prediction),
-                'confidence': float(max(probability)),
-                'probabilities': {
-                    'safe': float(probability[0]),
-                    'vulnerable': float(probability[1])
-                }
-            }
-        except Exception as e:
-            logger.error(f"Binary prediction failed: {e}")
-            return {'error': str(e)}
-    
-    def predict_multiclass(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Make multi-class vulnerability prediction."""
-        model = self.get_model('multiclass_classifier')
-        if not model:
-            return {'error': 'Multi-class classifier not available'}
-        
-        try:
-            # Convert features to DataFrame
-            feature_names = self.metadata['features']
-            feature_values = [features.get(name, 0) for name in feature_names]
-            X = pd.DataFrame([feature_values], columns=feature_names)
-            
-            # Make prediction
-            prediction = model.predict(X)[0]
-            probabilities = model.predict_proba(X)[0]
-            classes = model.classes_
-            
-            # Get top predictions
-            top_indices = np.argsort(probabilities)[::-1]
-            top_predictions = [
-                {
-                    'vulnerability_type': classes[i],
-                    'confidence': float(probabilities[i])
-                }
-                for i in top_indices[:3]  # Top 3 predictions
-            ]
-            
-            return {
-                'predicted_type': prediction,
-                'confidence': float(max(probabilities)),
-                'top_predictions': top_predictions,
-                'all_probabilities': {
-                    classes[i]: float(probabilities[i]) 
-                    for i in range(len(classes))
-                }
-            }
-        except Exception as e:
-            logger.error(f"Multi-class prediction failed: {e}")
-            return {'error': str(e)}
-    
-    def get_feature_importance(self, model_name: str) -> Optional[Dict[str, float]]:
-        """Get feature importance from a model."""
-        model = self.get_model(model_name)
-        if not model or not hasattr(model, 'model'):
-            return None
-        
-        try:
-            if hasattr(model.model, 'feature_importances_'):
-                feature_names = self.metadata['features']
-                importances = model.model.feature_importances_
-                return dict(zip(feature_names, importances))
-        except Exception as e:
-            logger.error(f"Failed to get feature importance: {e}")
-        
-        return None
-    
-    def is_available(self) -> bool:
-        """Check if models are available."""
-        return (
-            self.metadata is not None and 
-            len(self.models) > 0 and
-            self.models_dir.exists()
-        )
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get information about loaded models."""
-        if not self.metadata:
-            return {'available': False, 'error': 'No metadata'}
-        
-        info = {
-            'available': True,
-            'models_loaded': list(self.models.keys()),
-            'models_available': list(self.metadata['models'].keys()),
-            'created_at': self.metadata.get('created_at'),
-            'features': self.metadata.get('features', [])
+        logger.info(f"Loaded {loaded_count} models successfully")
+        return {
+            'binary': binary_model,
+            'multiclass': multiclass_model,
+            'count': loaded_count
         }
+    
+    def predict_vulnerability(self, features: Dict[str, float]):
+        """Make predictions using loaded models."""
+        if not self.models:
+            self.load_all_models()
+        
+        results = {
+            'available': False,
+            'binary_prediction': None,
+            'multiclass_prediction': None
+        }
+        
+        # Convert features to DataFrame
+        features_df = pd.DataFrame([features])
+        
+        # Binary prediction
+        if 'binary' in self.models and self.models['binary']:
+            try:
+                binary_model = self.models['binary']
+                predictions, probabilities = binary_model.predict(features_df)
+                
+                results['binary_prediction'] = {
+                    'is_vulnerable': bool(predictions[0]),
+                    'confidence': float(max(probabilities[0])),
+                    'vulnerability_probability': float(probabilities[0][1]) if len(probabilities[0]) > 1 else 0.5
+                }
+                results['available'] = True
+            except Exception as e:
+                logger.error(f"Binary prediction error: {e}")
+        
+        # Multi-class prediction
+        if 'multiclass' in self.models and self.models['multiclass']:
+            try:
+                multiclass_data = self.models['multiclass']
+                model = multiclass_data['model']
+                label_encoder = multiclass_data['label_encoder']
+                
+                predictions = model.predict(features_df)
+                probabilities = model.predict_proba(features_df)
+                
+                predicted_class = label_encoder.inverse_transform(predictions)[0]
+                confidence = float(max(probabilities[0]))
+                
+                # Get all class probabilities
+                class_probabilities = {}
+                for i, class_name in enumerate(label_encoder.classes_):
+                    class_probabilities[class_name] = float(probabilities[0][i])
+                
+                results['multiclass_prediction'] = {
+                    'vulnerability_type': predicted_class,
+                    'confidence': confidence,
+                    'class_probabilities': class_probabilities
+                }
+                results['available'] = True
+            except Exception as e:
+                logger.error(f"Multi-class prediction error: {e}")
+        
+        return results
+    
+    def get_model_info(self):
+        """Get information about loaded models."""
+        info = {
+            'models_loaded': len(self.models),
+            'available_models': list(self.models.keys()),
+            'metadata': self.metadata
+        }
+        
+        if 'binary' in self.models:
+            info['binary_model'] = {
+                'type': 'RandomForestVulnerabilityDetector',
+                'status': 'loaded'
+            }
+        
+        if 'multiclass' in self.models:
+            multiclass_data = self.models['multiclass']
+            info['multiclass_model'] = {
+                'type': 'RandomForestClassifier',
+                'status': 'loaded',
+                'classes': list(multiclass_data['label_encoder'].classes_) if 'label_encoder' in multiclass_data else []
+            }
         
         return info
 
-# Global model loader instance
-_model_loader = None
 
-def get_model_loader() -> ModelLoader:
-    """Get the global model loader instance."""
-    global _model_loader
-    if _model_loader is None:
-        _model_loader = ModelLoader()
-    return _model_loader
-
-def load_models():
-    """Load all models."""
-    loader = get_model_loader()
-    return loader.load_all_models()
-
-def predict_vulnerability(features: Dict[str, Any]) -> Dict[str, Any]:
-    """Make vulnerability predictions using loaded models."""
-    loader = get_model_loader()
-    
-    if not loader.is_available():
-        return {
-            'error': 'AI models not available',
-            'available': False,
-            'suggestion': 'Run: python setup_ai_models.py'
-        }
-    
-    # Get both binary and multi-class predictions
-    binary_result = loader.predict_binary(features)
-    multiclass_result = loader.predict_multiclass(features)
-    
-    # Get feature importance
-    feature_importance = loader.get_feature_importance('binary_classifier')
-    
-    return {
-        'available': True,
-        'binary_prediction': binary_result,
-        'multiclass_prediction': multiclass_result,
-        'feature_importance': feature_importance,
-        'model_info': loader.get_model_info()
-    }
+def predict_vulnerability(features: Dict[str, float]):
+    """Standalone function for vulnerability prediction."""
+    loader = ModelLoader()
+    return loader.predict_vulnerability(features)

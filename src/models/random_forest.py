@@ -78,17 +78,7 @@ class RandomForestVulnerabilityDetector:
         self.is_trained = False
         self.training_history = []
         
-        logger.info("RandomForestVulnerabilityDetector initialized")
-        Args:
-            n_estimators: Number of trees in the forest
-            max_depth: Maximum depth of trees
-            min_samples_split: Minimum samples required to split a node
-            min_samples_leaf: Minimum samples required at a leaf node
-            max_features: Number of features to consider for best split
-            class_weight: Weights associated with classes
-            random_state: Random seed for reproducibility
-            n_jobs: Number of jobs to run in parallel
-        """
+        # Initialize the Random Forest model
         self.model = RandomForestClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth,
@@ -99,6 +89,8 @@ class RandomForestVulnerabilityDetector:
             random_state=random_state,
             n_jobs=n_jobs
         )
+        
+        logger.info("RandomForestVulnerabilityDetector initialized")
         
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
@@ -679,12 +671,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()    
-
-    def train_binary_classifier(self, X: pd.DataFrame, y: pd.Series, 
-                               tune_hyperparameters: bool = True) -> Dict[str, Any]:
-        """
-        Train binary vulnerability classifier.
-        
-        Args:
-            X:
+    main()

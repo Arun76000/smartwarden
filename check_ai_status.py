@@ -46,28 +46,46 @@ def check_trained_models():
     return all_present
 
 def check_external_tools():
-    """Check if external tools are installed."""
+    """Check if external tools are available."""
     print("\n🛠️ Checking External Tools...")
     
-    tools = [
-        ("slither", "Slither Static Analysis"),
-        ("myth", "Mythril Symbolic Execution")
-    ]
-    
     tools_available = {}
-    for command, name in tools:
-        try:
-            result = subprocess.run([command, '--version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                print(f"  ✅ {name} - Available")
-                tools_available[command] = True
-            else:
-                print(f"  ❌ {name} - Not working")
-                tools_available[command] = False
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            print(f"  ❌ {name} - Not installed")
-            tools_available[command] = False
+    
+    # Check native tools first
+    try:
+        sys.path.insert(0, 'src')
+        from integration.native_tools import check_native_tools_availability
+        from integration.docker_tools import check_tools_availability
+        
+        native_status = check_native_tools_availability()
+        docker_status = check_tools_availability()
+        
+        # Check Slither
+        if docker_status.get('slither') and docker_status.get('docker'):
+            print("  ✅ Slither Static Analysis - Docker available")
+            tools_available['slither'] = True
+        elif native_status.get('native_slither'):
+            print("  ✅ Slither Static Analysis - Native implementation")
+            tools_available['slither'] = True
+        else:
+            print("  ❌ Slither Static Analysis - Not available")
+            tools_available['slither'] = False
+        
+        # Check Mythril
+        if docker_status.get('mythril') and docker_status.get('docker'):
+            print("  ✅ Mythril Symbolic Execution - Docker available")
+            tools_available['mythril'] = True
+        elif native_status.get('native_mythril'):
+            print("  ✅ Mythril Symbolic Execution - Native implementation")
+            tools_available['mythril'] = True
+        else:
+            print("  ❌ Mythril Symbolic Execution - Not available")
+            tools_available['mythril'] = False
+            
+    except Exception as e:
+        print(f"  ❌ Tool check failed: {e}")
+        tools_available['slither'] = False
+        tools_available['mythril'] = False
     
     return tools_available
 
@@ -77,12 +95,12 @@ def check_feature_extraction():
     
     try:
         sys.path.insert(0, 'src')
-        from features.feature_extractor import FeatureExtractor
+        from features.feature_extractor import SolidityFeatureExtractor
         
         # Test with simple contract
         test_contract = "pragma solidity ^0.8.0; contract Test { function test() public {} }"
         
-        extractor = FeatureExtractor()
+        extractor = SolidityFeatureExtractor()
         features = extractor.extract_features(test_contract)
         
         print(f"  ✅ Feature extraction working")
@@ -99,18 +117,31 @@ def check_model_loading():
     
     try:
         sys.path.insert(0, 'src')
-        from models.model_loader import get_model_loader
+        from models.model_loader import ModelLoader, predict_vulnerability
         
-        loader = get_model_loader()
-        info = loader.get_model_info()
+        loader = ModelLoader()
+        models = loader.load_all_models()
         
-        if info.get('available'):
-            print(f"  ✅ Model loader working")
-            print(f"  ✅ Models available: {info.get('models_available', [])}")
-            print(f"  ✅ Models loaded: {info.get('models_loaded', [])}")
+        if models and models.get('count', 0) > 0:
+            print("  ✅ Model loading working")
+            print(f"  ✅ Loaded {models['count']} models")
+            
+            # Test prediction
+            sample_features = {'lines_of_code': 10, 'function_count': 1}
+            result = predict_vulnerability(sample_features)
+            
+            if result.get('available'):
+                print("  ✅ Model prediction working")
+                if result.get('binary_prediction'):
+                    print("  ✅ Binary classification available")
+                if result.get('multiclass_prediction'):
+                    print("  ✅ Multi-class classification available")
+            else:
+                print("  ⚠️ Models loaded but prediction not available")
+            
             return True
         else:
-            print(f"  ❌ Models not available: {info.get('error', 'Unknown')}")
+            print("  ❌ No models loaded")
             return False
             
     except Exception as e:
@@ -190,7 +221,17 @@ def main():
         print("\n💡 To enable external tools:")
         print("   pip install slither-analyzer mythril")
     
-    print(f"\n📈 Overall Status: {sum(results.values())}/{len(results)} components ready")
+    # Count successful components (handle mixed types)
+    successful_components = 0
+    for result in results.values():
+        if isinstance(result, bool):
+            successful_components += int(result)
+        elif isinstance(result, dict):
+            successful_components += int(any(result.values()))
+        else:
+            successful_components += int(bool(result))
+    
+    print(f"\n📈 Overall Status: {successful_components}/{len(results)} components ready")
     
     return ai_models_ready
 
